@@ -1,0 +1,9 @@
+target/
+*.db
+*.db-wal
+*.db-shm
+.git/
+.gitignore
+aidlc-docs/
+*.md
+!frontend/dist/
