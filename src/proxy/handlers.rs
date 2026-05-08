@@ -140,6 +140,8 @@ async fn chat_completion_stream_inner(
         let mut sse_buf = String::new();
         let mut input_tokens: u32 = 0;
         let mut output_tokens: u32 = 0;
+        let mut cache_read_tokens: u32 = 0;
+        let mut cache_creation_tokens: u32 = 0;
         let mut resolved_model = model_name.clone();
 
         while let Some(chunk) = byte_stream.next().await {
@@ -151,6 +153,8 @@ async fn chat_completion_stream_inner(
                             &sse_buf,
                             &mut input_tokens,
                             &mut output_tokens,
+                            &mut cache_read_tokens,
+                            &mut cache_creation_tokens,
                             &mut resolved_model,
                         );
                         // Discard fully-parsed lines; keep only the trailing partial line.
@@ -179,10 +183,11 @@ async fn chat_completion_stream_inner(
                 prompt_tokens: input_tokens,
                 completion_tokens: output_tokens,
                 total_tokens: input_tokens + output_tokens,
-                cache_read_tokens: 0,
-                cache_creation_tokens: 0,
+                cache_read_tokens,
+                cache_creation_tokens,
             };
             tracking_service.record(record);
+            metrics.record_cache(cache_read_tokens, cache_creation_tokens);
             metrics.record_tokens(&provider_name_str, &resolved_model, input_tokens, output_tokens);
             metrics.record_request(&provider_name_str, &resolved_model, 200);
         }
@@ -204,6 +209,8 @@ fn parse_sse_usage(
     buf: &str,
     input_tokens: &mut u32,
     output_tokens: &mut u32,
+    cache_read: &mut u32,
+    cache_creation: &mut u32,
     resolved_model: &mut String,
 ) {
     for line in buf.lines() {
@@ -222,6 +229,12 @@ fn parse_sse_usage(
                     if let Some(u) = msg.get("usage") {
                         if let Some(n) = u.get("input_tokens").and_then(|n| n.as_u64()) {
                             *input_tokens = n as u32;
+                        }
+                        if let Some(n) = u.get("cache_read_input_tokens").and_then(|n| n.as_u64()) {
+                            *cache_read = n as u32;
+                        }
+                        if let Some(n) = u.get("cache_creation_input_tokens").and_then(|n| n.as_u64()) {
+                            *cache_creation = n as u32;
                         }
                     }
                 }
